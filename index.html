@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VT Legislative Storyline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f; --bg-card: #141420; --bg-elevated: #1c1c2e;
+      --border: rgba(255,255,255,0.08); --text: #e2e2f0; --text-muted: #888899;
+      --accent: #7c6bff; --accent-glow: rgba(124,107,255,0.25);
+      --c-enacted: #30d158; --c-passed-senate: #34aadc; --c-passed-house: #5ac8fa;
+      --c-passed-committee: #ffcc00; --c-in-committee: #ff9f0a; --c-introduced: #8e8e93;
+      --c-dead: #ff3b5c; --c-vetoed: #bf5af2; --c-pending: #636366;
+      --radius: 12px; --radius-sm: 8px; --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.6; min-height: 100vh; }
+    a { color: var(--accent); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
+    /* Header */
+    #app-header { background: linear-gradient(180deg, rgba(124,107,255,0.12) 0%, transparent 100%); border-bottom: 1px solid var(--border); padding: 1.25rem 0; }
+    #app-header .inner { display: flex; align-items: center; gap: 1rem; }
+    #app-header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    #app-header h1 span { color: var(--accent); }
+    .tagline { color: var(--text-muted); font-size: 0.85rem; margin-left: auto; }
+    /* API Key button */
+    #btn-key { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: var(--radius-sm); padding: 0.4rem 0.75rem; font-size: 0.8rem; cursor: pointer; font-family: var(--font); margin-left: 0.5rem; }
+    #btn-key:hover { border-color: var(--accent); color: var(--text); }
+    #key-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c-dead); margin-right: 5px; }
+    #key-dot.set { background: var(--c-enacted); }
+    /* Controls */
+    #controls { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 0.9rem 0; position: sticky; top: 0; z-index: 100; }
+    #controls .inner { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    label { color: var(--text-muted); font-size: 0.85rem; }
+    select, button { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-family: var(--font); font-size: 0.9rem; cursor: pointer; transition: border-color 0.15s; }
+    select:hover, button:hover { border-color: var(--accent); }
+    select:focus, button:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #btn-load { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 0.5rem 1.25rem; }
+    #btn-load:hover { background: #9080ff; }
+    #btn-load:disabled { opacity: 0.5; cursor: not-allowed; }
+    #cache-info { margin-left: auto; font-size: 0.78rem; color: var(--text-muted); }
+    /* Loading */
+    #loading-panel { display: none; padding: 3rem 0; text-align: center; }
+    #loading-panel.visible { display: block; }
+    .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; margin: 0 auto 1rem; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-steps { list-style: none; max-width: 400px; margin: 1rem auto 0; text-align: left; }
+    #loading-steps li { color: var(--text-muted); font-size: 0.9rem; padding: 0.25rem 0; }
+    #loading-steps li.active { color: var(--text); }
+    #loading-steps li.active::before { content: '→ '; color: var(--accent); }
+    #loading-steps li.done { color: var(--c-enacted); }
+    #loading-steps li.done::before { content: '✓ '; }
+    /* Tabs */
+    #main-content { display: none; padding: 1.5rem 0; }
+    #main-content.visible { display: block; }
+    .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+    .tab-btn { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.6rem 1.25rem; color: var(--text-muted); font-size: 0.9rem; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* Stats */
+    .stats-bar { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .stat-chip { background: var(--bg-card); border: 1px solid var(--border); border-radius: 100px; padding: 0.3rem 0.9rem; font-size: 0.82rem; }
+    .stat-chip .count { font-weight: 700; margin-right: 0.3em; }
+    /* Timeline */
+    #timeline-chart { width: 100%; height: 600px; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); }
+    /* Narrative */
+    #narrative-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.75rem; margin-bottom: 1.5rem; min-height: 80px; line-height: 1.8; }
+    #narrative-box p { margin-bottom: 1em; }
+    #narrative-cursor { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); animation: blink 0.8s infinite; vertical-align: text-bottom; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    /* Bill Cards */
+    #bill-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; }
+    .bill-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; transition: border-color 0.15s, box-shadow 0.15s; scroll-margin-top: 80px; }
+    .bill-card:hover { border-color: rgba(124,107,255,0.4); box-shadow: 0 0 0 1px rgba(124,107,255,0.2); }
+    .bill-card-header { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .bill-number { font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+    .status-badge { font-size: 0.72rem; font-weight: 600; padding: 0.2rem 0.55rem; border-radius: 100px; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+    .bill-title { font-size: 0.88rem; margin-bottom: 0.4rem; line-height: 1.4; }
+    .bill-sponsor { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .milestone-pipeline { display: flex; align-items: center; margin-bottom: 0.75rem; overflow-x: auto; padding-bottom: 2px; }
+    .ms-step { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 42px; position: relative; }
+    .ms-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--text-muted); background: transparent; z-index: 1; }
+    .ms-dot.reached { background: currentColor; border-color: currentColor; }
+    .ms-label { font-size: 0.6rem; color: var(--text-muted); text-align: center; margin-top: 3px; line-height: 1.2; }
+    .ms-line { position: absolute; top: 5px; left: calc(50% + 5px); width: calc(100% - 10px); height: 2px; background: var(--border); }
+    .ms-line.reached { opacity: 0.5; }
+    .bill-summary { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-top: 0.5rem; }
+    .bill-summary.loading { color: var(--accent); opacity: 0.7; }
+    /* Welcome */
+    #welcome-panel { text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
+    #welcome-panel h2 { color: var(--text); font-size: 1.5rem; margin-bottom: 0.5rem; }
+    #welcome-panel p { max-width: 500px; margin: 0 auto 1rem; }
+    /* Error */
+    #error-panel { display: none; background: rgba(255,59,92,0.1); border: 1px solid rgba(255,59,92,0.3); border-radius: var(--radius); padding: 1.25rem; margin: 1.5rem 0; color: #ff6b87; }
+    #error-panel.visible { display: block; }
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+    .modal-overlay.visible { display: flex; }
+    .modal { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; max-width: 480px; width: 90%; }
+    .modal h2 { margin-bottom: 0.5rem; font-size: 1.1rem; }
+    .modal p { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1rem; line-height: 1.5; }
+    .modal input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; font-family: monospace; font-size: 0.85rem; margin-bottom: 1rem; }
+    .modal input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+    .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .btn-primary:hover { background: #9080ff; }
+    .btn-secondary { background: transparent; }
+    @media (max-width: 640px) {
+      #controls .inner { gap: 0.5rem; }
+      select { max-width: 160px; }
+      #bill-cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- API Key Modal -->
+<div class="modal-overlay" id="key-modal">
+  <div class="modal">
+    <h2>🔑 Anthropic API Key</h2>
+    <p>This app calls Claude AI directly from your browser to generate bill summaries and narratives. Your key is stored only in <code>localStorage</code> — never sent to any third-party server.</p>
+    <input type="password" id="key-input" placeholder="sk-ant-..." autocomplete="off">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeKeyModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveKey()">Save Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header id="app-header">
+  <div class="container inner">
+    <h1>🏛 VT <span>Legislative</span> Storyline</h1>
+    <span class="tagline">Vermont lawmaking, made understandable</span>
+    <button id="btn-key" onclick="openKeyModal()"><span id="key-dot"></span>API Key</button>
+  </div>
+</header>
+
+<!-- Controls -->
+<nav id="controls">
+  <div class="container inner">
+    <label for="year-select">Session</label>
+    <select id="year-select" aria-label="Session year"></select>
+    <label for="committee-select">Committee</label>
+    <select id="committee-select" style="min-width:220px;max-width:360px;" aria-label="Committee">
+      <option disabled selected>— select a session first —</option>
+    </select>
+    <button id="btn-load" onclick="onLoad()">Load Story</button>
+    <span id="cache-info"></span>
+  </div>
+</nav>
+
+<!-- Main -->
+<main class="container">
+  <section id="welcome-panel">
+    <h2>Explore Vermont Legislation</h2>
+    <p>Select a session year and committee, then click <strong>Load Story</strong> to see every bill considered, its journey through the legislature, and an AI-generated narrative.</p>
+    <p style="font-size:0.82rem">Set your <a href="#" onclick="openKeyModal();return false">Anthropic API key</a> to enable AI summaries and the narrative — otherwise bills are shown without summaries.</p>
+  </section>
+
+  <div id="error-panel" role="alert"></div>
+
+  <section id="loading-panel" aria-live="polite">
+    <div class="spinner"></div>
+    <p>Loading legislative data…</p>
+    <ul id="loading-steps"></ul>
+  </section>
+
+  <section id="main-content">
+    <div class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="story">📰 Story</button>
+      <button class="tab-btn" data-tab="timeline">📊 Timeline</button>
+    </div>
+
+    <!-- Story tab -->
+    <div class="tab-panel active" id="tab-story">
+      <div id="narrative-box" aria-live="polite"></div>
+      <div class="stats-bar" id="stats-bar"></div>
+      <div id="bill-cards"></div>
+    </div>
+
+    <!-- Timeline tab -->
+    <div class="tab-panel" id="tab-timeline">
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:0.75rem;">Each bar = one bill. Color = final status. Click a bar to jump to its card. Scroll to zoom.</p>
+      <div id="timeline-chart"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+// ── Constants ─────────────────────────────────────────────────────────────────
+const CORS  = 'https://corsproxy.io/?';
+const VT    = 'https://legislature.vermont.gov';
+const ANTH  = 'https://api.anthropic.com/v1/messages';
+const MODEL = 'claude-opus-4-5';
+
+const STATUS_COLORS = {
+  enacted:'#30d158', passed_senate:'#34aadc', passed_house:'#5ac8fa',
+  passed_committee:'#ffcc00', in_committee:'#ff9f0a', introduced:'#8e8e93',
+  dead:'#ff3b5c', vetoed:'#bf5af2', pending:'#636366',
+};
+const STATUS_LABELS = {
+  enacted:'Enacted ✓', passed_senate:'Passed Senate', passed_house:'Passed House',
+  passed_committee:'Passed Committee', in_committee:'In Committee',
+  introduced:'Introduced', dead:'Dead / Tabled', vetoed:'Vetoed', pending:'Pending',
+};
+const PIPELINE_STAGES = [
+  {key:'introduced',short:'Intro'}, {key:'in_committee',short:'Comm.'},
+  {key:'passed_committee',short:'Out'}, {key:'passed_house',short:'H Pass'},
+  {key:'passed_senate',short:'S Pass'}, {key:'enacted',short:'Law'},
+];
+const STATUS_ORDER = {
+  pending:-1, introduced:0, in_committee:1, passed_committee:2,
+  passed_house:3, passed_senate:4, enacted:5, dead:99, vetoed:99,
+};
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function parseDate(raw) {
+  if (!raw) return '';
+  const t = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  return t;
+}
+
+function stripHtml(h) { return h.replace(/<[^>]+>/g,'').trim(); }
+function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Status normalisation ──────────────────────────────────────────────────────
+const KW_MAP = {
+  Enacted:{status:'enacted',label:'Signed by Governor'},
+  Vetoed:{status:'vetoed',label:'Vetoed by Governor'},
+  PassedSen:{status:'passed_senate',label:'Passed Senate'},
+  PassedHou:{status:'passed_house',label:'Passed House'},
+  PassedBoth:{status:'enacted',label:'Passed Both Chambers'},
+  OutOfCom:{status:'passed_committee',label:'Reported by Committee'},
+  Tabled:{status:'dead',label:'Tabled'},
+  Defeated:{status:'dead',label:'Defeated'},
+  Introduced:{status:'introduced',label:'Introduced'},
+  billassign:{status:'in_committee',label:'Referred to Committee'},
+  Comin:{status:'in_committee',label:'In Committee'},
+};
+const TEXT_RULES = [
+  [/signed by the governor/i,'enacted','Signed by Governor'],
+  [/enacted without.*signature/i,'enacted','Enacted (no signature)'],
+  [/vetoed by the governor/i,'vetoed','Vetoed by Governor'],
+  [/passed.{0,30}senate\b|senate.{0,30}\bpassed/i,'passed_senate','Passed Senate'],
+  [/passed.{0,30}house\b|house.{0,30}\bpassed/i,'passed_house','Passed House'],
+  [/third reading.{0,30}passed/i,'passed_house','Passed Third Reading'],
+  [/reported favorably|reported out of committee/i,'passed_committee','Reported by Committee'],
+  [/laid on the table|indefinitely postponed|defeated|failed/i,'dead','Died / Tabled'],
+  [/referred to.*committee|recommitted|read first time/i,'in_committee','Referred to Committee'],
+  [/introduced/i,'introduced','Introduced'],
+];
+function normalizeAction(actionText) {
+  const kws = actionText.split(';').map(k=>k.trim()).filter(Boolean);
+  for (const kw of kws) { if (KW_MAP[kw]) return KW_MAP[kw]; }
+  for (const [re,status,label] of TEXT_RULES) { if (re.test(actionText)) return {status,label}; }
+  return null;
+}
+function buildMilestones(actions) {
+  const ms = []; let last = null;
+  for (const a of actions) {
+    const n = normalizeAction(a.action);
+    if (!n || n.status === last) continue;
+    ms.push({date:a.date,label:n.label,status:n.status,chamber:a.chamber});
+    last = n.status;
+  }
+  return ms;
+}
+
+// ── VT Legislature API (via CORS proxy) ───────────────────────────────────────
+async function vtFetch(path, params='') {
+  const url = encodeURIComponent(`${VT}${path}${params}`);
+  const r = await fetch(`${CORS}${url}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${path}`);
+  return r.json();
+}
+async function vtFetchHtml(path) {
+  const url = encodeURIComponent(`${VT}${path}`);
+  const r = await fetch(`${CORS}${url}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.text();
+}
+
+async function fetchCommittees(year) {
+  const data = await vtFetch(`/committee/loadList/${year}/`);
+  const list = Array.isArray(data) ? data : (data.data ?? []);
+  function inferChamber(t) { return t==='HStand'?'H':t==='SStand'?'S':t==='Joint'?'J':'O'; }
+  function buildName(n,t) {
+    if (t==='HStand' && !n.toLowerCase().startsWith('house')) return `House ${n}`;
+    if (t==='SStand' && !n.toLowerCase().startsWith('senate')) return `Senate ${n}`;
+    return n;
+  }
+  return list
+    .filter(c => c.Inactive !== '1')
+    .map(c => ({id:parseInt(c.CommitteeID),name:buildName(c.CommitteeName,c.CommitteeTypeCode),chamber:inferChamber(c.CommitteeTypeCode),year}))
+    .sort((a,b)=>({'H':0,'S':1,'J':2,'O':3}[a.chamber]-{'H':0,'S':1,'J':2,'O':3}[b.chamber]||a.name.localeCompare(b.name)));
+}
+
+async function fetchBillList(year, committeeId) {
+  const data = await vtFetch(`/committee/loadReferredBills/${year}`, `?committeeId=${committeeId}`);
+  const list = Array.isArray(data) ? data : (data.data ?? []);
+  if (!Array.isArray(list)) return [];
+  return list.map(b => {
+    const raw = b.BillSortNumber || b.BillNumber || '';
+    const billNumber = raw.replace(/^([A-Z]+\.)0*(\d+)$/,'$1$2');
+    return {
+      billNumber,
+      title: (b.Title || b.Title1 || '').trim(),
+      sponsor: `${b.PersonTitle||''} ${b.FirstName||''} ${b.LastName||''}`.replace(/\s{2,}/g,' ').trim(),
+    };
+  }).filter(b => b.billNumber);
+}
+
+async function fetchBillDetail(year, billNumber, prefetch={}) {
+  // Step 1: get bill status HTML to find numeric ID
+  let numericId = null, cosponsors = [], docUrls = [];
+  try {
+    const html = await vtFetchHtml(`/bill/status/${year}/${billNumber}`);
+    const idM = html.match(/loadBillDetailedStatus\/\d+\/(\d+)/);
+    if (idM) numericId = idM[1];
+    // Parse doc URLs from HTML
+    const docRe = /href="([^"]*(?:BILLS|ACTS|RESOLUTN|TESTIMONY)[^"]*\.pdf[^"]*)"/gi;
+    let dm;
+    while ((dm=docRe.exec(html))!==null) {
+      const u = dm[1].startsWith('http') ? dm[1] : `${VT}/${dm[1].replace(/^\//,'')}`;
+      docUrls.push(u);
+    }
+  } catch(e) { /* page scrape failed, proceed without numericId */ }
+
+  // Step 2: fetch action history
+  let actions = [];
+  if (numericId) {
+    try {
+      const data = await vtFetch(`/bill/loadBillDetailedStatus/${year}/${numericId}`);
+      const raw = Array.isArray(data) ? data : (data.data ?? []);
+      actions = (Array.isArray(raw)?raw:[])
+        .map(a => {
+          const kws = (a.keywords||'').split(';').map(k=>k.trim()).filter(Boolean);
+          const plain = stripHtml(a.FullStatus||a.FullStatus1||'');
+          return {
+            date: parseDate(a.StatusDate||''),
+            chamber: a.ChamberCode||'',
+            action: kws.length ? kws.join(';')+';'+plain : plain,
+          };
+        })
+        .sort((a,b)=>a.date.localeCompare(b.date));
+    } catch(e) { /* action fetch failed */ }
+  }
+
+  const milestones = buildMilestones(actions);
+  const finalStatus = milestones.length ? milestones[milestones.length-1].status : 'pending';
+  const dates = actions.map(a=>a.date).filter(Boolean);
+
+  return {
+    billNumber,
+    title: prefetch.title || '',
+    sponsor: prefetch.sponsor || '',
+    cosponsors,
+    startDate: dates[0]||'',
+    endDate: dates[dates.length-1]||'',
+    finalStatus,
+    milestones,
+    witnesses: [],
+    documentUrls: [...new Set(docUrls)],
+  };
+}
+
+// ── Claude AI ─────────────────────────────────────────────────────────────────
+function getApiKey() { return localStorage.getItem('vt_anthropic_key') || ''; }
+
+async function summarizeBill(bill) {
+  const key = getApiKey();
+  if (!key) return null;
+  const timeline = bill.milestones.map(m=>`• ${m.date}: ${m.label}`).join('\n');
+  const prompt = `Bill: ${bill.billNumber}\nTitle: ${bill.title}\nSponsor: ${bill.sponsor}\n\nJourney:\n${timeline||'(no actions)'}\n\nWrite a 2-3 sentence plain-English summary for a Vermont citizen. Don't start with "This bill".`;
+  try {
+    const r = await fetch(ANTH, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:MODEL,max_tokens:200,system:'You summarize Vermont legislation clearly and concisely for ordinary citizens.',messages:[{role:'user',content:prompt}]}),
+    });
+    const d = await r.json();
+    return d.content?.[0]?.text?.trim() || null;
+  } catch(e) { return null; }
+}
+
+async function streamNarrative(bills, committeeName, year) {
+  const key = getApiKey();
+  if (!key) {
+    document.getElementById('narrative-box').innerHTML = `<p style="color:var(--text-muted);font-style:italic">Add your Anthropic API key to generate an AI narrative of this committee's work.</p>`;
+    return;
+  }
+  const billLines = bills.map(b=>`• ${b.billNumber}: "${b.title}" — ${STATUS_LABELS[b.finalStatus]||b.finalStatus}. ${b.summary||''}`).join('\n');
+  const prompt = `Committee: ${committeeName}\nSession: ${year}\nBills (${bills.length} total):\n${billLines}\n\nWrite a 4-6 paragraph journalistic narrative about this committee's work for a Vermont community newspaper. Flowing prose, no bullet points.`;
+
+  const box = document.getElementById('narrative-box');
+  box.innerHTML = '<span id="narrative-cursor"></span>';
+  let buf = '';
+
+  try {
+    const r = await fetch(ANTH, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:MODEL,max_tokens:1500,stream:true,system:'You are a Vermont local journalist writing for a community newspaper.',messages:[{role:'user',content:prompt}]}),
+    });
+    const reader = r.body.getReader(); const dec = new TextDecoder();
+    while(true) {
+      const {done,value} = await reader.read(); if(done) break;
+      const chunk = dec.decode(value);
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const raw = line.slice(5).trim(); if (raw==='[DONE]') continue;
+        try {
+          const ev = JSON.parse(raw);
+          if (ev.type==='content_block_delta' && ev.delta?.type==='text_delta') {
+            buf += ev.delta.text;
+            const paras = buf.split(/\n{2,}/);
+            box.innerHTML = paras.map(p=>`<p>${esc(p.trim())}</p>`).join('')+'<span id="narrative-cursor"></span>';
+          }
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    buf = 'Narrative generation failed. Check your API key.';
+    box.innerHTML = `<p style="color:var(--c-dead)">${esc(buf)}</p>`;
+    return;
+  }
+  // Remove cursor
+  document.getElementById('narrative-cursor')?.remove();
+}
+
+// ── Timeline (ECharts) ────────────────────────────────────────────────────────
+let chart = null;
+function renderTimeline(bills) {
+  const el = document.getElementById('timeline-chart');
+  if (!chart) { chart = echarts.init(el,'dark'); window.addEventListener('resize',()=>chart.resize()); }
+  const sorted = [...bills].sort((a,b)=>(a.startDate||'').localeCompare(b.startDate||'')||a.billNumber.localeCompare(b.billNumber));
+  const yCategories = sorted.map(b=>b.billNumber);
+  const barData = sorted.map((bill,i)=>({
+    name:bill.billNumber,
+    value:[i,bill.startDate||'2025-01-01',bill.endDate||bill.startDate||'2025-01-01',bill.billNumber,bill.finalStatus],
+    itemStyle:{color:STATUS_COLORS[bill.finalStatus]||'#636366',opacity:0.85},
+  }));
+  chart.setOption({
+    backgroundColor:'transparent',
+    tooltip:{formatter(p){const b=sorted.find(x=>x.billNumber===p.data?.name);if(!b)return p.data?.name;return`<strong>${b.billNumber}</strong><br><em>${b.title||''}</em><br><span style="color:${STATUS_COLORS[b.finalStatus]}">${STATUS_LABELS[b.finalStatus]||b.finalStatus}</span><br>${b.startDate} → ${b.endDate||b.startDate}`;}},
+    grid:{left:90,right:40,top:10,bottom:60},
+    xAxis:{type:'time',axisLabel:{color:'#888899',fontSize:11},splitLine:{lineStyle:{color:'rgba(255,255,255,0.06)'}}},
+    yAxis:{data:yCategories,axisLabel:{color:'#888899',fontSize:11},splitLine:{show:false}},
+    dataZoom:[{type:'inside',xAxisIndex:0},{type:'slider',xAxisIndex:0,bottom:10,height:20,fillerColor:'rgba(124,107,255,0.2)',borderColor:'rgba(124,107,255,0.4)',handleStyle:{color:'#7c6bff'}}],
+    series:[{type:'custom',renderItem(params,api){const start=api.coord([api.value(1),api.value(0)]);const end=api.coord([api.value(2),api.value(0)]);const h=api.size([0,1])[1]*0.5;return{type:'rect',shape:{x:start[0],y:start[1]-h/2,width:Math.max(end[0]-start[0],2),height:h,r:4},style:api.style(),emphasis:{style:{opacity:1}}};},data:barData,encode:{x:[1,2],y:0}}],
+  },true);
+  chart.off('click');
+  chart.on('click',p=>{ if(p.data?.name) scrollToCard(p.data.name); });
+}
+
+// ── Bill cards ────────────────────────────────────────────────────────────────
+function renderStats(data) {
+  document.getElementById('stats-bar').innerHTML = [
+    `<div class="stat-chip"><span class="count" style="color:#7c6bff">${data.totalBills}</span>Total Bills</div>`,
+    `<div class="stat-chip"><span class="count" style="color:${STATUS_COLORS.enacted}">${data.enacted}</span>Enacted</div>`,
+    `<div class="stat-chip"><span class="count" style="color:${STATUS_COLORS.dead}">${data.dead}</span>Dead / Vetoed</div>`,
+    `<div class="stat-chip"><span class="count" style="color:${STATUS_COLORS.in_committee}">${data.pending}</span>Still Active</div>`,
+  ].join('');
+}
+
+function renderCards(bills) {
+  document.getElementById('bill-cards').innerHTML = bills.map(bill => {
+    const color = STATUS_COLORS[bill.finalStatus] || STATUS_COLORS.pending;
+    const label = STATUS_LABELS[bill.finalStatus] || bill.finalStatus;
+    const reachedOrder = STATUS_ORDER[bill.finalStatus] ?? -1;
+    const isDead = bill.finalStatus === 'dead' || bill.finalStatus === 'vetoed';
+    const pipeline = PIPELINE_STAGES.map((s,i) => {
+      const so = STATUS_ORDER[s.key] ?? i;
+      const reached = reachedOrder >= so && !isDead;
+      const c = STATUS_COLORS[s.key];
+      return `<div class="ms-step"><div class="ms-dot ${reached?'reached':''}" style="color:${c}"></div><div class="ms-label">${s.short}</div>${i<PIPELINE_STAGES.length-1?`<div class="ms-line ${reached?'reached':''}" style="background:${reached?c:'var(--border)'}"></div>`:''}</div>`;
+    }).join('');
+    const summaryHtml = bill.summary
+      ? `<div class="bill-summary">${esc(bill.summary)}</div>`
+      : `<div class="bill-summary loading" id="sum-${bill.billNumber.replace(/\./g,'-')}">Generating summary…</div>`;
+    return `<div class="bill-card" id="card-${bill.billNumber.replace(/\./g,'-')}">
+      <div class="bill-card-header">
+        <span class="bill-number">${esc(bill.billNumber)}</span>
+        <span class="status-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${esc(label)}</span>
+      </div>
+      <div class="bill-title">${esc(bill.title||'Untitled')}</div>
+      <div class="bill-sponsor">${esc(bill.sponsor||'Unknown sponsor')}</div>
+      <div class="milestone-pipeline">${pipeline}</div>
+      ${summaryHtml}
+    </div>`;
+  }).join('');
+}
+
+function updateSummary(billNumber, text) {
+  const id = `sum-${billNumber.replace(/\./g,'-')}`;
+  const el = document.getElementById(id);
+  if (el) { el.className='bill-summary'; el.textContent = text; }
+}
+
+function scrollToCard(billNumber) {
+  // Switch to story tab
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab==='story'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='tab-story'));
+  const el = document.getElementById(`card-${billNumber.replace(/\./g,'-')}`);
+  if (el) { el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.borderColor='#7c6bff'; setTimeout(()=>el.style.borderColor='',2000); }
+}
+
+// ── State machine ─────────────────────────────────────────────────────────────
+let _state = 'idle', _bills = [], _year = null, _committeeId = null;
+function setState(s) {
+  _state = s;
+  document.getElementById('btn-load').disabled = s==='loading';
+  document.getElementById('welcome-panel').style.display = s==='idle' ? '' : 'none';
+  document.getElementById('loading-panel').classList.toggle('visible', s==='loading');
+  document.getElementById('main-content').classList.toggle('visible', s==='loaded');
+  if (s==='loading') { document.getElementById('loading-steps').innerHTML=''; }
+}
+function addStep(msg) {
+  const ul = document.getElementById('loading-steps');
+  ul.querySelectorAll('li.active').forEach(li=>{li.classList.remove('active');li.classList.add('done');});
+  const li = document.createElement('li'); li.textContent=msg; li.classList.add('active'); ul.appendChild(li);
+}
+function showError(msg) { const p=document.getElementById('error-panel'); p.textContent=msg; p.classList.add('visible'); }
+function clearError() { const p=document.getElementById('error-panel'); p.classList.remove('visible'); p.textContent=''; }
+
+// ── Committee population ──────────────────────────────────────────────────────
+const yearSel = document.getElementById('year-select');
+const commSel = document.getElementById('committee-select');
+const currentYear = new Date().getFullYear();
+for (let y=currentYear; y>=2020; y--) {
+  const o=document.createElement('option'); o.value=y; o.textContent=`${y-1}–${y}`;
+  if(y===currentYear) o.selected=true; yearSel.appendChild(o);
+}
+async function populateCommittees() {
+  const year = parseInt(yearSel.value);
+  commSel.innerHTML='<option disabled selected>Loading…</option>'; commSel.disabled=true;
+  try {
+    const committees = await fetchCommittees(year);
+    commSel.innerHTML=''; commSel.disabled=false;
+    let lastChamber=null;
+    committees.forEach(c=>{
+      if(c.chamber!==lastChamber) { const g=document.createElement('optgroup'); g.label={H:'House Committees',S:'Senate Committees',J:'Joint Committees',O:'Other'}[c.chamber]||'Committees'; commSel.appendChild(g); lastChamber=c.chamber; }
+      const o=document.createElement('option'); o.value=c.id; o.textContent=c.name; commSel.lastElementChild.appendChild(o);
+    });
+    const saved=sessionStorage.getItem('lastComm');
+    if(saved && commSel.querySelector(`option[value="${saved}"]`)) commSel.value=saved;
+  } catch(e) { commSel.innerHTML=`<option disabled>Error: ${e.message}</option>`; }
+}
+yearSel.addEventListener('change', populateCommittees);
+populateCommittees();
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const tab=btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b===btn));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===`tab-${tab}`));
+  });
+});
+
+// ── Main load flow ────────────────────────────────────────────────────────────
+window.onLoad = async function() {
+  if (_state==='loading') return;
+  const year = parseInt(yearSel.value);
+  const committeeId = parseInt(commSel.value);
+  if (!committeeId) { showError('Please select a committee.'); return; }
+  sessionStorage.setItem('lastComm', String(committeeId));
+  clearError(); setState('loading');
+
+  try {
+    // 1. Get bill list
+    addStep('Fetching bill list from legislature.vermont.gov…');
+    const billList = await fetchBillList(year, committeeId);
+    if (!billList.length) throw new Error('No bills found for this committee/year.');
+
+    // 2. Fetch each bill's detail (rate-limited: 3 at a time, 300ms apart)
+    addStep(`Fetching details for ${billList.length} bills…`);
+    const bills = [];
+    const CONCURRENCY = 3;
+    for (let i=0; i<billList.length; i+=CONCURRENCY) {
+      const batch = billList.slice(i, i+CONCURRENCY);
+      const results = await Promise.all(batch.map(b=>
+        fetchBillDetail(year, b.billNumber, {title:b.title, sponsor:b.sponsor})
+          .catch(()=>null)
+      ));
+      bills.push(...results.filter(Boolean));
+      await new Promise(r=>setTimeout(r,400));
+      if (i+CONCURRENCY < billList.length) addStep(`Fetched ${Math.min(i+CONCURRENCY,billList.length)}/${billList.length} bills…`);
+    }
+
+    _bills = bills; _year = year;
+
+    // 3. Compute stats
+    const enacted = bills.filter(b=>b.finalStatus==='enacted').length;
+    const dead = bills.filter(b=>b.finalStatus==='dead'||b.finalStatus==='vetoed').length;
+    const pending = bills.length - enacted - dead;
+
+    // 4. Render without summaries first
+    addStep('Rendering…');
+    setState('loaded');
+    renderStats({totalBills:bills.length, enacted, dead, pending});
+    renderCards(bills);
+    renderTimeline(bills);
+
+    // 5. Generate AI summaries (background, per-bill, no blocking)
+    addStep('Generating AI summaries…');
+    if (getApiKey()) {
+      for (let i=0; i<bills.length; i+=5) {
+        const batch = bills.slice(i,i+5);
+        await Promise.all(batch.map(async bill => {
+          const sum = await summarizeBill(bill);
+          if (sum) { bill.summary = sum; updateSummary(bill.billNumber, sum); }
+        }));
+        await new Promise(r=>setTimeout(r,300));
+      }
+    } else {
+      document.querySelectorAll('.bill-summary.loading').forEach(el => {
+        el.textContent = 'Add an API key to generate summaries.';
+      });
+    }
+
+    // 6. Stream narrative
+    const committeeName = commSel.options[commSel.selectedIndex]?.text || '';
+    addStep('Writing committee narrative…');
+    await streamNarrative(bills, committeeName, year);
+
+    // Mark done
+    const ul = document.getElementById('loading-steps');
+    ul.querySelectorAll('li.active').forEach(li=>{li.classList.remove('active');li.classList.add('done');});
+
+  } catch(e) {
+    setState('idle');
+    showError(`Error: ${e.message}`);
+  }
+};
+
+// ── API Key modal ─────────────────────────────────────────────────────────────
+function updateKeyDot() {
+  const dot = document.getElementById('key-dot');
+  dot.className = 'set'; // will be set if key exists
+  if (!getApiKey()) dot.className = '';
+}
+window.openKeyModal = function() {
+  document.getElementById('key-input').value = getApiKey();
+  document.getElementById('key-modal').classList.add('visible');
+};
+window.closeKeyModal = function() { document.getElementById('key-modal').classList.remove('visible'); };
+window.saveKey = function() {
+  const k = document.getElementById('key-input').value.trim();
+  if (k) localStorage.setItem('vt_anthropic_key', k);
+  else localStorage.removeItem('vt_anthropic_key');
+  updateKeyDot();
+  closeKeyModal();
+};
+document.getElementById('key-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeKeyModal(); });
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeKeyModal(); });
+updateKeyDot();
+</script>
+</body>
+</html>
